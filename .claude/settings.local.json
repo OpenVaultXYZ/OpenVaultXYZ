@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:hyperliquid.gitbook.io)",
+      "Bash(node packages/hyperliquid/explore2.mjs)",
+      "Bash(pnpm --version)",
+      "Bash(npm install:*)",
+      "Bash(pnpm install:*)",
+      "Bash(pnpm build:*)",
+      "Bash(node scripts/apply-schema.mjs)",
+      "Bash(docker exec:*)",
+      "Bash(node scripts/seed.mjs --meta-only)",
+      "Bash(node scripts/seed.mjs)"
+    ]
+  }
+}

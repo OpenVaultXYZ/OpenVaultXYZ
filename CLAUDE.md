@@ -3,7 +3,7 @@
 
 **Repo:** github.com/openvault-trade/OpenVaultXYZ
 **Live at:** openvault.trade
-**What we build:** Vault + operator evaluation platform for capital allocators on Hyperliquid
+**What we build:** Independent vault analytics and ratings platform for Hyperliquid — the research layer that sits between capital allocators and the vaults they deposit into.
 
 ---
 
@@ -12,22 +12,28 @@
 | File | Purpose | Updated when |
 |---|---|---|
 | `CLAUDE.md` | Coding context — stack, focus, conventions | End of every Claude Code session |
-| `CONTEXT.md` | Business strategy, pricing, moat plan | After Claude chat decisions |
+| `CONTEXT.md` | Business strategy, pricing, phase roadmap | After Claude chat decisions |
 | `FINDINGS.md` | Interesting data observations → X posts | Any time you see something worth sharing |
-| `packages/hyperliquid/EXPLORATION.md` | Technical API findings | During API exploration phase |
+| `packages/hyperliquid/EXPLORATION.md` | Technical API findings — Hyperliquid specific | During API exploration, when new findings emerge |
 
 ---
 
 ## Current Focus
 
-**Phase: API Exploration**
-Do not write production code until this phase is complete.
-All findings go in `packages/hyperliquid/EXPLORATION.md`.
+**Phase: UI — MVP Complete**
 
-**After API exploration → Project scaffolding**
-**After scaffolding → Data pipeline**
+UI complete as of 2026-03-16:
+- `apps/web/` — Next.js 15 App Router, Tailwind CSS dark theme (TradingView-inspired)
+- Leaderboard homepage — 435 vaults, sortable/filterable table, client-side sort/filter
+- Vault detail pages — NAV chart (Recharts), metrics grid (Performance/Risk/Alpha/Beta/Activity sections), strategy badge, risk score meter
+- Search — debounced `useTransition` router.push, server-rendered results
+- `pnpm build` passes clean with no TypeScript errors
 
-When you finish a phase, update the Current Focus here before closing the session.
+**Next task: deploy to production (Vercel frontend + Railway/Render for DB) + set up daily cron for metrics refresh.**
+
+**After deploy → Stripe + auth (subscriptions).**
+
+When you finish a phase, update Current Focus and Current State before closing.
 
 ---
 
@@ -39,56 +45,90 @@ When you finish a phase, update the Current Focus here before closing the sessio
 3. Know exactly what you're working on before writing a line
 
 ### During a session
-- API findings → `packages/hyperliquid/EXPLORATION.md`
-- Interesting data observations → `FINDINGS.md` (one line is enough)
+- Platform-specific API findings → `packages/hyperliquid/EXPLORATION.md`
+- Interesting data observations → `FINDINGS.md` (one line is enough, plain language)
 - Decisions made → working notes at bottom of this file
 
 ### Ending a session
-Update these two things before closing:
-1. **Current State** — check off what's done
-2. **Working Notes** — one line per key finding or decision
+1. Update **Current State** — check off what's done
+2. Update **Working Notes** — one line per key finding or decision
 
 ---
 
 ## What OpenVault Is
 
-The infrastructure layer for evaluating on-chain trading talent on Hyperliquid.
-We serve capital allocators — anyone deciding where to put money based on someone else's ability to generate returns.
+OpenVault is independent vault analytics for Hyperliquid. We help capital allocators — from retail depositors to institutional funds — evaluate vaults before committing capital.
 
-**Two core data objects — both first-class, always linked:**
-- **Vault** — the vehicle. `vault.operator_address` always present.
-- **Operator** — the talent. `operator.vault_addresses[]` always present.
+**The core product:** vault pages with risk-adjusted metrics, strategy fingerprinting, regime analysis, and peer benchmarking. The leaderboard shows a line chart and a return number. OpenVault shows everything that actually matters for a capital allocation decision.
+
+**Operator profiles are a supporting feature, not the core product.** Allocators invest in vaults. Operator context (track record across multiple vaults, consistency, drawdown behavior) informs that decision — it's valuable due diligence context, not the primary unit of analysis.
 
 **We are not an exchange.** Read-only analytics + UX deposit routing. Never custody funds.
 
 **Primary revenue:** subscriptions ($19/mo Pro, $199/mo Institutional, 30-day trial no card)
+**Full business context in CONTEXT.md**
+
+---
+
+## Multi-Platform Architecture (Critical Design Constraint)
+
+OpenVault will eventually support multiple platforms beyond Hyperliquid: Lighter, dYdX v4, GMX, and others. Each platform has different API field names, different platform-specific events, and different data quirks.
+
+**The rule:** the metrics engine must never know which platform data came from.
+
+**How this works:**
+
+```
+Platform-specific ingestion (translator)     Normalized internal schema     Metrics engine
+─────────────────────────────────────────    ──────────────────────────    ──────────────
+Hyperliquid:                                                                
+  side = "B"/"S"/"A"          ──────────►   NormalizedFill {               
+  px, sz, closedPnl, tid                      price, size, realizedPnl,    ──────────►  
+  fee, hash, coin, time                       fee, tradeId, asset, time,    Sharpe()
+                                              isAdlEvent: boolean,          Drawdown()
+Lighter (future):                             platform: "hyperliquid"       WinRate()
+  [different field names]     ──────────►     ...                           etc.
+                                            }
+dYdX v4 (future):
+  [different field names]     ──────────►
+```
+
+**Concrete examples of what translation means:**
+- Hyperliquid `side = "A"` → `isAdlEvent: true` in our schema
+- Hyperliquid `px` → `price` in our schema
+- Hyperliquid `sz` → `size` in our schema
+- Hyperliquid `closedPnl` → `realizedPnl` in our schema
+- Hyperliquid `tid` → `tradeId` in our schema
+
+The translation happens ONCE in the Hyperliquid ingestion package. Everything downstream uses normalized field names. A future Lighter translator produces the same NormalizedFill shape — the metrics engine runs unchanged.
+
+**The metrics package must never import from the hyperliquid package.**
 
 ---
 
 ## The Moat Plan (inform every build decision)
 
-We build genuine importance — not just a product. Four things make us hard to replicate:
+Four things make OpenVault hard to replicate:
 
 **1. Methodology credibility**
 Publish rating methodology openly. Version it. Invite criticism. Fix it publicly when wrong.
 Hold ratings under pressure — never change for relationship reasons, only for data reasons.
-When a vault we flagged blows up or an operator we rated highly keeps performing, document it.
+When a vault we flagged blows up, document it publicly. This is how trust compounds.
 
 **2. Operator network effects**
-Operators who rate well become advocates — they share their OpenVault rating to attract deposits.
-Operator verification program: verified operators get richer profiles. Not pay-to-play — rating stays independent. Operators participate because it helps them raise capital.
-Reach out to top 20 vault operators personally before launch. Build relationships, not just data.
+Operators who rate well share their OpenVault rating to attract deposits — they become advocates.
+Operator verification program (Phase 2): verified operators get richer profiles. Not pay-to-play.
+Reach out to top 20 vault operators personally before launch.
 
 **3. Institutional relationships**
-Find early institutional participants in the HL ecosystem (family offices, DAO treasuries, funds).
+Find early institutional participants: family offices, DAO treasuries, crypto funds with HL exposure.
 Serve them with relationships, not just software. Their feedback = product roadmap.
-Verified Track Record product (Phase 3): operators pay for certified reports. Allocators require them.
 Quarterly ecosystem reports — free, public, referenced by media and analysts.
 
 **4. Community trust**
 Weekly risk-adjusted rankings — every week, same format, same methodology, no exceptions.
-Never optimize for short-term revenue at the expense of credibility.
 Be right in public. When predictions come true, document it clearly.
+Never optimize for short-term revenue at the expense of credibility.
 
 ---
 
@@ -111,62 +151,97 @@ Never use public RPC in production — rate limited ~100 req/min
 
 ---
 
-## API Exploration Checklist
+## Normalized Internal Schema (Translation Layer Output)
 
-Work through in order. Document every answer in `packages/hyperliquid/EXPLORATION.md`.
+These are our field names. Platform translators produce these. Metrics engine consumes these.
 
-**Vault discovery**
-- [ ] How do you get a list of all active vaults?
-- [ ] What does a vault address look like?
-- [ ] What fields does a vault object contain?
-- [ ] How do you distinguish a vault from a regular account?
-- [ ] How is operator address linked to vault address?
+```typescript
+interface NormalizedFill {
+  // Identity
+  tradeId: string           // unique fill ID (HL: tid)
+  platform: string          // "hyperliquid" | "lighter" | "dydx" etc.
+  vaultAddress: string      // vault this fill belongs to
 
-**Trade history**
-- [ ] What endpoint returns trade history for a vault?
-- [ ] What does a single trade/fill object look like? (all fields and types)
-- [ ] How do you paginate through full history?
-- [ ] How far back does history go?
-- [ ] Are closed PnL figures included per trade or must they be calculated?
+  // Trade data
+  asset: string             // coin/market (HL: coin)
+  price: number             // execution price (HL: px)
+  size: number              // position size (HL: sz)
+  side: "buy" | "sell"      // direction (HL: "B"/"S" → normalized, "A" → isAdlEvent)
+  time: Date                // execution timestamp (HL: time ms → Date)
 
-**Positions and state**
-- [ ] How do you get current open positions for a vault?
-- [ ] How do you get current equity / NAV?
-- [ ] How do you get funding payments received?
-- [ ] How do you get leverage utilization?
+  // PnL
+  realizedPnl: number       // closed PnL for this fill (HL: closedPnl)
+  fee: number               // fee paid (HL: fee)
+  feeAsset: string          // currency of fee (HL: feeToken)
 
-**Rate limits**
-- [ ] What is the actual practical rate limit on the public API?
-- [ ] Does it differ between REST and WebSocket?
-- [ ] What does a rate limit error response look like?
-- [ ] How many vaults can you ingest per minute on the public API?
+  // Position context
+  positionBefore: number    // size before fill (HL: startPosition)
+  direction: string         // "Open Long" | "Close Short" etc. (HL: dir)
 
-**Operator linking**
-- [ ] Can you query all vaults by a given operator address?
-- [ ] Is operator address always present on vault data?
-- [ ] Can one address be both a regular trader and an operator?
+  // Risk flags
+  isAdlEvent: boolean       // auto-deleveraged fill (HL: side === "A")
+  isTwap: boolean           // part of a TWAP order (HL: twapId !== null)
+
+  // Raw reference
+  rawHash: string           // transaction hash (HL: hash)
+}
+
+interface NormalizedVaultSnapshot {
+  vaultAddress: string
+  platform: string
+  time: Date
+  nav: number               // net asset value / account value
+  totalNotional: number     // total position size
+  totalMarginUsed: number
+  withdrawable: number
+}
+
+interface NormalizedPosition {
+  vaultAddress: string
+  platform: string
+  asset: string
+  size: number              // positive = long, negative = short
+  entryPrice: number
+  markPrice: number
+  unrealizedPnl: number
+  marginUsed: number
+  leverage: number
+  liquidationPrice: number | null
+  isIsolated: boolean
+  snapshotTime: Date
+}
+```
 
 ---
 
 ## Data Architecture
 
 ```
-Hyperliquid Info API + WebSocket
-       ↓
-  Ingestion worker (scheduled polls + live WS)
+Platform-specific ingestion packages
+  packages/hyperliquid/    ← Hyperliquid API client + translator
+  packages/lighter/        ← (future)
+  packages/dydx/           ← (future)
+       ↓ NormalizedFill, NormalizedVaultSnapshot, NormalizedPosition
+  packages/db/             ← writes normalized data to TimescaleDB
        ↓
   TimescaleDB
-  ├── raw_trades        (vault_address, time, asset, side, size, price, pnl, fee)
-  ├── vault_positions   (current open positions per vault)
-  ├── vault_snapshots   (equity snapshots over time)
-  ├── funding_payments  (funding rate income per vault)
-  └── operators         (operator_address → vault_addresses mapping)
+  ├── normalized_fills      (NormalizedFill rows)
+  ├── vault_snapshots       (NormalizedVaultSnapshot rows)
+  ├── vault_positions       (NormalizedPosition rows)
+  ├── vaults                (vault registry — one row per vault)
+  └── operators             (operator_address → vault_addresses mapping)
        ↓
-  Metrics computation worker (batch, scheduled — never on request)
-  ├── vault_metrics     (all computed vault metrics)
-  └── operator_metrics  (aggregate across all operator vaults)
+  packages/metrics/        ← pure functions, platform-agnostic
+  ├── performance.ts        (TWR, win rate, profit factor)
+  ├── risk.ts               (Sharpe, Sortino, Calmar, drawdown)
+  ├── beta.ts               (beta to BTC/ETH, alpha/beta decomp)
+  ├── regime.ts             (regime tagging and performance by period)
+  ├── classifier.ts         (strategy type classification)
+  └── score.ts              (composite risk score 1-10)
        ↓
-  Redis cache (pre-computed, TTL-managed)
+  BullMQ worker             ← recomputes metrics on schedule
+       ↓
+  Redis                     ← pre-computed results cache
        ↓
   Next.js API routes → Frontend
 ```
@@ -175,13 +250,14 @@ Hyperliquid Info API + WebSocket
 
 ## Metrics to Compute
 
-**Vault — performance:** annualized return (TWR), win rate, profit factor, avg win/loss
-**Vault — risk:** Sharpe, Sortino, Calmar, max drawdown, avg drawdown, drawdown duration + recovery, leverage over time
-**Vault — alpha/beta:** beta to BTC, beta to ETH, funding income % of total return
-**Vault — composite:** risk score (1-10), peer percentile rank within strategy type
-**Vault — regime:** performance tagged by market period (trending bull / ranging / risk-off / high vol)
+**Performance:** annualized return (TWR), win rate, profit factor, avg win/loss
+**Risk:** Sharpe, Sortino, Calmar, max drawdown, avg drawdown, drawdown duration + recovery, leverage over time
+**Alpha/Beta:** beta to BTC, beta to ETH, funding income % of total return, ADL event frequency
+**Composite:** risk score (1-10), peer percentile rank within strategy type
+**Regime:** performance by market period (trending bull / ranging / risk-off / high vol)
 
-**Operator:** total AUM, capital-weighted aggregate return, consistency score, strategy diversity, drawdown behavior score (cut vs hold vs add), track record depth, peer ranking, capital raised over time
+**Operator-level (from vault aggregation):**
+Total AUM, capital-weighted aggregate return, consistency score, drawdown behavior score, track record depth, peer ranking
 
 ---
 
@@ -210,11 +286,12 @@ OpenVaultXYZ/
 │   └── api/                          ← Node.js backend
 ├── packages/
 │   ├── hyperliquid/
-│   │   ├── EXPLORATION.md            ← API findings (written before any .ts)
-│   │   ├── client.ts                 ← HL API client
-│   │   ├── types.ts                  ← Zod schemas + TypeScript types
-│   │   └── ingestion.ts              ← data ingestion logic
-│   ├── metrics/                      ← pure functions, fully testable
+│   │   ├── EXPLORATION.md            ← HL API findings
+│   │   ├── client.ts                 ← HL API client (raw API calls)
+│   │   ├── types.ts                  ← Zod schemas for HL raw API types
+│   │   ├── translator.ts             ← HL raw → NormalizedFill etc.
+│   │   └── ingestion.ts              ← orchestrates client + translator + db writes
+│   ├── metrics/                      ← pure functions, platform-agnostic
 │   ├── classifier/                   ← strategy classification
 │   └── db/                           ← TimescaleDB schema, migrations, queries
 └── infra/                            ← deployment config
@@ -226,28 +303,48 @@ OpenVaultXYZ/
 
 - TypeScript strict mode everywhere
 - Zod for ALL external data validation — HL API schemas change without warning
-- Metric computation = pure functions only, no side effects, fully testable
-- Metrics always pre-computed from cache — never computed at request time
+- **metrics package never imports from hyperliquid package** — enforce strictly
+- All metric computation = pure functions, no side effects, fully testable
+- Metrics always pre-computed and cached — never computed at request time
 - Never store or log private keys
 - Paginate all historical fetches — never pull all history in one request
-- Vault and operator always linked — enforce at schema level
+- Platform field names never appear outside their package (e.g. `px`, `sz`, `side = "A"` stay inside `packages/hyperliquid/`)
+
+---
+
+## API Exploration Checklist (Hyperliquid — complete)
+
+All items complete as of 2026-03-14. See `packages/hyperliquid/EXPLORATION.md` for full findings.
+
+Key findings summary:
+- No vault discovery endpoint — must maintain external registry ← significant constraint
+- `vaultDetails.leader` = operator address (but can be another vault for sub-vaults)
+- `closedPnl` per fill — accurate, but NOT a running total. Sum across fills.
+- `side = "A"` = ADL event — critical risk signal, not visible on leaderboard
+- All numeric values returned as strings — parse carefully
+- Rate limit ~5 req/sec sequential (~100 vaults/min at 3 req/vault)
+- `relationship.type` = "normal" | "parent" | "child" (previously could be null)
+
+Open items: WebSocket subscriptions, `userFunding` endpoint, `userRateLimit` hard limits
 
 ---
 
 ## Current State
 
-- [ ] GitHub repo: OpenVaultXYZ ✓
-- [ ] Domain: openvault.trade ✓
-- [ ] Email: hello@openvault.trade ✓
-- [ ] Wyoming LLC: in progress
+- [x] GitHub repo: OpenVaultXYZ (github.com/openvault-trade/OpenVaultXYZ)
+- [x] Domain: openvault.trade
+- [x] Email: hello@openvault.trade
+- [ ] Wyoming LLC: filing in progress (Northwest Registered Agent, ~$143 total)
 - [ ] Twitter/X handle: pending
-- [ ] CLAUDE.md + CONTEXT.md + FINDINGS.md in repo: pending
-- [ ] API exploration: not started
-- [ ] EXPLORATION.md: not started
-- [ ] Project scaffolding: not started
-- [ ] Data pipeline: not started
-- [ ] Metrics engine: not started
-- [ ] UI: not started
+- [x] API exploration: complete (2026-03-14) — minor open items remain
+- [x] EXPLORATION.md: complete
+- [x] Project scaffolding: complete (2026-03-14)
+- [x] Data pipeline: complete (2026-03-15) — 519 vaults, 3,140,111 fills in TimescaleDB
+- [x] Translation layer: complete (2026-03-15) — normalized_fills table, translator.ts, 9 passing tests
+- [x] BFS vault discovery: complete (2026-03-16) — 33 seeds → 519 vaults via follower BFS
+- [x] Metrics engine: complete (2026-03-16) — 84 passing tests, 435 active vaults computed, vault_metrics table populated
+- [x] market_prices: complete (2026-03-16) — 26,684 hourly BTC+ETH prices via CryptoCompare, 275/435 vaults have meaningful beta (±10 cap)
+- [x] UI: complete (2026-03-16) — leaderboard, vault pages, search. pnpm build clean.
 - [ ] Stripe + auth: not started
 
 ---
@@ -258,9 +355,20 @@ _One line per key finding or decision. Add date. Update every session._
 
 **March 2026**
 - Stack: Next.js + Node.js + TimescaleDB + Redis + BullMQ
-- Builder code confirmed non-applicable to vault deposits — subscriptions are primary revenue
+- Builder code non-applicable to vault deposits — subscriptions are primary revenue
 - Pricing: $19/mo Pro, $199/mo Institutional, 30-day trial no card
-- Moat strategy: methodology transparency + operator relationships + institutional trust + community consistency
-- Build order: API exploration → scaffolding → data pipeline → metrics → UI → subscriptions → deposit routing
-- Deposit routing is Phase 2 UX feature only — do not build until analytics validated
-- Phase 3: verified track record product + direct trading interface (builder code revenue) + OMS
+- Moat: methodology transparency + operator relationships + institutional trust + community consistency
+- Build order: translation layer → metrics → UI → subscriptions → deposit routing → verified records → execution interface
+- 2026-03-14: API exploration complete. No vault discovery endpoint — must maintain registry. ADL fills (`side = "A"`) are critical risk signal. All numerics as strings. Rate limit ~5 req/sec.
+- 2026-03-14: Scaffolding complete. pnpm workspace, 3 packages compile: @openvault/hyperliquid, @openvault/db, @openvault/metrics.
+- 2026-03-15: First ingestion complete. 33 vaults, 563,925 fills. Growi HF highest frequency (71k fills). Liquidator vault deprecated (last fill Aug 2023). Citadel oldest track record (Dec 2023). HLP returns 0 fills — protocol vault data not exposed.
+- 2026-03-15: Translation layer complete. normalized_fills table (replaces raw_trades). translator.ts tested. Key discovery: HL side="A" = ask-side fill (maker sell), NOT ADL. B/A/S split ratio is a strategy classification signal — market makers have ~50% A fills, zero S fills.
+- 2026-03-15: Architecture decision — build NormalizedFill translation layer before metrics engine. Metrics package must never import from hyperliquid package. Platform-agnostic metrics engine enables future expansion to Lighter, dYdX v4, GMX without rewriting metrics.
+- 2026-03-15: Business reframe — vault is the primary product unit, operator is supporting due diligence context. Allocators invest in vaults. Phase order revised: analytics → deposit routing → verified track records → execution interface (builder code revenue) → OMS.
+- 2026-03-16: BFS discovery complete. 33 seeds → 519 vaults. discovery_source bug fixed (ingestVaultMeta now accepts discoverySource param, defaults "manual"). 33 manual + 486 bfs. discovery.ts callers pass correct source.
+- 2026-03-16: Metrics engine complete. 84 tests passing across 5 modules (returns, risk, beta, classification, score). 435 active vaults computed. Key observation: large portion of discovered vaults have -100% returns (blown up). HLP Strategy A risk=1.0 (near-perfect). Beta null for all until market_prices populated.
+- 2026-03-16: NAV sanitization in compute-metrics.mjs strips pre-trading initialization artifacts and >5x deposit spikes — essential for accurate TWR. HLP Strategy A shows nav=92→2 after sanitization (initialization noise removed).
+- 2026-03-16: Next focus — UI. Need market_prices table populated for beta before or during UI work.
+- 2026-03-16: UI complete. Next.js 15 App Router, Tailwind dark theme, leaderboard/vault/search pages. Three type errors fixed: SortKey widening in LeaderboardTable, exactOptionalPropertyTypes in MetricsGrid, useSearchParams Suspense boundary in layout. All pages force-dynamic (no DB at build time). pnpm build passes clean.
+- 2026-03-16: market_prices populated. 26,684 hourly BTC+ETH prices from CryptoCompare (2023-03-01→2026-03-17). Beta capped at ±10 in compute-metrics.mjs — extreme values from blown-up vaults are null. 275/435 vaults have meaningful btc/eth beta. Median BTC beta = 0.01 (most vaults are market-neutral). fetch-market-prices.mjs script added to scripts/.
+- 2026-03-16: Metrics correctness fixes. (1) Removed firstFillTime filter from sanitizeNavSeries — it was silently discarding months of NAV history for BFS-discovered vaults (HyperGrowth: 11 → 41 nav points used, Sharpe now 1.84 instead of null, max DD now 53.9% instead of 2.7%). (2) Fixed Sharpe/Sortino annualization: uses periodsPerYear() from actual avg snapshot gap instead of hardcoded sqrt(365). (3) Fixed Calmar to use TWR annualizedReturn() instead of simple start/end ratio. (4) UI: dynamic "Total Return" vs "Annualized Return" label, data window banner, "Needs X more weeks" for missing ratios, tooltip definitions on all metrics, AUM disclosure note on chart. 84 tests still passing, pnpm build clean.
